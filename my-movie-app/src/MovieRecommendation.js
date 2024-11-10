@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
+import { saveMovieToFirebase } from "./firebaseData";  // Import the saveMovie function
+
 import "./MovieRecommendation.css"; // Import custom styles
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
@@ -18,6 +20,9 @@ function App() {
   const [trailerUrl, setTrailerUrl] = useState(null); // State for trailer URL
   const [selectedGenre, setSelectedGenre] = useState(null); // State for selected genre
 
+  const [similarMovies, setSimilarMovies] = useState([]); // State for similar movies
+
+
   const API_KEY = "2e7b644a"; // OMDB API key
   const TMDB_API_KEY = "6a710a6d7c5ceda7c0591b94359d7587"; // TMDB API key
   const YOUTUBE_API_KEY = "AIzaSyCFlI4DCTaz7ILp9RHdPuDMmvzY_xVSWXs"; // YouTube API key
@@ -34,16 +39,18 @@ function App() {
     { id: 14, name: "Fantasy" },
     { id: 36, name: "History" },
     { id: 27, name: "Horror" },
-    { id: 10402, name: "Music" },
     { id: 9648, name: "Mystery" },
     { id: 10749, name: "Romance" },
     { id: 878, name: "Science Fiction" },
-    { id: 10770, name: "TV Movie" },
     { id: 53, name: "Thriller" },
     { id: 10752, name: "War" },
     { id: 37, name: "Western" },
   ];
 
+  const handleSaveMovie = (movie) => {
+    saveMovieToFirebase(movie);  // Call the function from firebaseData.js
+  };
+  
  // Updated fetchMoviesByGenre function
 async function fetchMoviesByGenre(genreId) {
   try {
@@ -119,14 +126,42 @@ async function fetchMoviesByGenre(genreId) {
 };
 
 const fetchMovieDetails = async (id) => {
-    try {
-        const response = await axios.get(`https://www.omdbapi.com/?apikey=${API_KEY}&i=${id}`);
-        setSelectedMovie(response.data);
-        fetchTrailer(response.data.Title); // Fetch trailer after getting movie details
-    } catch (error) {
-        console.error("Error fetching movie details:", error);
-    }
+  try {
+      const response = await axios.get(`https://www.omdbapi.com/?apikey=${API_KEY}&i=${id}`);
+      setSelectedMovie(response.data);
+      fetchTrailer(response.data.Title);
+
+      if (response.data.imdbID) {
+          // Fetch TMDB ID using the IMDb ID
+          const tmdbFindResponse = await axios.get(`https://api.themoviedb.org/3/find/${response.data.imdbID}`, {
+            params: {
+              api_key: TMDB_API_KEY,
+              external_source: "imdb_id",
+            },
+          });
+
+          const tmdbId = tmdbFindResponse.data.movie_results[0]?.id;
+          if (tmdbId) {
+              const similarResponse = await axios.get(`https://api.themoviedb.org/3/movie/${tmdbId}/similar`, {
+                params: {
+                  api_key: TMDB_API_KEY,
+                },
+              });
+              setSimilarMovies(similarResponse.data.results);
+          } else {
+              console.error("TMDB ID not found.");
+              setSimilarMovies([]); // No similar movies available
+          }
+      } else {
+          console.error("TMDB ID not available for fetching similar movies.");
+          setSimilarMovies([]);
+      }
+  } catch (error) {
+      console.error("Error fetching movie details:", error);
+      setSimilarMovies([]);
+  }
 };
+
 
   const closeDetails = () => {
     setSelectedMovie(null);
@@ -217,7 +252,7 @@ const fetchTrailer = async (title) => {
   return (
     <div className="app">
       <header className="app-header">
-        <h1 className="line1">MOVIE RECOMMENDATION API</h1>
+       <div><center> <h1 className="line1">Search for movies you love and discover <br></br>everything about them!❤️</h1> </center></div>
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -240,7 +275,11 @@ const fetchTrailer = async (title) => {
         </form>
 
         {/* Genre Buttons */}
-        <div className="genre-buttons">
+        
+      </header>
+      <center><h2 className="mind">What's in your mind? </h2></center>
+
+      <div className="genre-buttons">
           {genres.map((genre) => (
             <button
               key={genre.id}
@@ -254,11 +293,10 @@ const fetchTrailer = async (title) => {
             </button>
           ))}
         </div>
-      </header>
-
       {loading && <div className="spinner"></div>}
       {error && <p className="error-message">{error}</p>}
 
+      <center><h2 className="trendtext"> </h2></center>
       <div className="movies-grid">
         {movies.length > 0 ? (
           movies.map((movie) => (
@@ -308,43 +346,67 @@ const fetchTrailer = async (title) => {
       </div>
 
       {selectedMovie && (
-        <div className="movie-details">
-          <div className="movie-details-content">
+    <div className="movie-details">
+        <div className="movie-details-content">
             <button className="close-button" onClick={closeDetails}>
-              &times;
+                &times;
             </button>
             {trailerUrl ? (
-              <div className="trailer-section">
-                <h3>Watch the Trailer</h3>
-                <iframe
-                  width="560"
-                  height="315"
-                  src={trailerUrl}
-                  title="YouTube video player"
-                  frameBorder="0"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                ></iframe>
-              </div>
+                <div className="trailer-section">
+                    <h3>Watch the Trailer</h3>
+                    <iframe
+                        width="560"
+                        height="315"
+                        src={trailerUrl}
+                        title="YouTube video player"
+                        frameBorder="0"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                    ></iframe>
+                </div>
             ) : (
-              <p>Trailer not available</p>
+                <p>Trailer not available</p>
             )}
             <div className="details-info">
-              <h2>{selectedMovie.Title}</h2>
-              <p><strong>Released:</strong> {selectedMovie.Released || 'N/A'}</p>
-              <p><strong>Runtime:</strong> {selectedMovie.Runtime || 'N/A'}</p>
-              <p><strong>Category:</strong> {selectedMovie.Genre || 'N/A'}</p>
-              <p><strong>Director:</strong> {selectedMovie.Director || 'N/A'}</p>
-              <p><strong>Writer:</strong> {selectedMovie.Writer || 'N/A'}</p>
-              <p><strong>Actors:</strong> {selectedMovie.Actors || 'N/A'}</p>
-              <p><strong>Plot:</strong> {selectedMovie.Plot || 'N/A'}</p>
-              <p><strong>Language:</strong> {selectedMovie.Language || 'N/A'}</p>
-              <p><strong>Country:</strong> {selectedMovie.Country || 'N/A'}</p>
-              <p><strong>IMDB Rating:</strong> {selectedMovie.imdbRating || 'N/A'}</p>
+                <h2>{selectedMovie.Title}</h2>
+                <p><strong>Released:</strong> {selectedMovie.Released || 'N/A'}</p>
+                <p><strong>Runtime:</strong> {selectedMovie.Runtime || 'N/A'}</p>
+                <p><strong>Category:</strong> {selectedMovie.Genre || 'N/A'}</p>
+                <p><strong>Director:</strong> {selectedMovie.Director || 'N/A'}</p>
+                <p><strong>Writer:</strong> {selectedMovie.Writer || 'N/A'}</p>
+                <p><strong>Actors:</strong> {selectedMovie.Actors || 'N/A'}</p>
+                <p><strong>Plot:</strong> {selectedMovie.Plot || 'N/A'}</p>
+                <p><strong>Language:</strong> {selectedMovie.Language || 'N/A'}</p>
+                <p><strong>Country:</strong> {selectedMovie.Country || 'N/A'}</p>
+                <p><strong>IMDB Rating:</strong> {selectedMovie.imdbRating || 'N/A'}</p>
+                
+                {/* Similar Movies Section */}
+                <h3 className="simi">Similar Movies</h3>
+                {similarMovies.length > 0 ? (
+                    <div className="similar-movies-grid">
+                        {similarMovies.map((movie) => (
+                            <div className="similar-movie-card" key={movie.id}>
+                                <img
+                                    src={
+                                        movie.poster_path
+                                            ? `https://image.tmdb.org/t/p/w200/${movie.poster_path}`
+                                            : "placeholder.jpg"
+                                    }
+                                    alt={movie.title}
+                                    className="similar-movie-poster"
+                                />
+                                <p>{movie.title}</p>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <p>No similar movies available.</p>
+                )}
             </div>
-          </div>
         </div>
-      )}
+    </div>
+)}
+
     </div>
   );
 }
